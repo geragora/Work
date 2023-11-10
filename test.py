@@ -19,21 +19,12 @@ for i in data_rub_USD.index:
 
 x = list(rub_usd_btc.values())
 date = list(rub_usd_btc.keys())
+d = [1000 for i in range(len(x[0]))]
 
-# x = [
-#     [ 1, 70,	1157800,78000000,	57188000],
-#     [1,96,2788360,161253000,11949216],  
-#     [1, 100, 2760036, 170000000, 90000000],
-#     [1, 60, 1350000, 130000000, 60000000],
-#     [1, 100, 3000000, 180000000, 120000000]
-# ]
-# date = [0,1,2,3,4]
-# date = ['01.02.2022', '01.03.2022', '01.04.2022', '01.05.2022','01.06.2022']
 def dataframe(dfs):
     data_dfs = []
     for index in range(len(dfs)):
         
-        d = [1000 for i in range(len(dfs[0]))]
         data = { 'KRUR': d,'KUSD': d, 'BTC': d}#, 'SMLNK': d, 'CTWK': d}
         df = pd.DataFrame(data)
         df = df.set_index(df.columns)
@@ -57,7 +48,7 @@ currency = 'BTC'
 
 active_data = []
 max_values = []
-capital = [1]
+capital = [0.07]
 for i in range(1, len(dfs)):
     list_f = pd.DataFrame(dfs[i - 1])
     list_s = pd.DataFrame(dfs[i])
@@ -107,11 +98,11 @@ for j in range(len(data.columns)):
 
 
 
-# fig.add_trace(go.Scatter(x=date,
-#                             y=capital,
-#                             mode='lines',
-#                             line=dict(color='green')
-#                             ))
+fig.add_trace(go.Scatter(x=date,
+                            y=capital,
+                            mode='lines',
+                            line=dict(color='green')
+                            ))
 
 st.plotly_chart(fig)
 st.dataframe(active)
@@ -181,13 +172,10 @@ for j in range(len(data.columns)):
 
 
 
-# fig.add_trace(go.Scatter(x=date,
-#                             y=capital,
-#                             mode='lines',
-#                             line=dict(color='green')
-#                             ))
+fig.add_trace(go.Scatter(x=date,
+                            y=capital,
+                            mode='lines',
+                            line=dict(color='red')
+                            ))
 
 st.plotly_chart(fig)
-
-
-
