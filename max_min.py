@@ -114,7 +114,7 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
                 usd_value = max_values[i-1][max_index][1]
                 btc_value = max_values[i-1][max_index][2]
                 capital.append(capital[-1]* (max_values[i-1][max_index][currency]))
-                cap.append(max_values[i-1][max_index][currency])
+                cap.append(max_values[i-1][max_index][currency]-1)
                 x = {'Промежуток времени': '{} -- {}'.format(data1, data2), 'Лучший актив': max_index,
                         'KRUR': rub_value, 'KUSD': usd_value,
                         'BTC': btc_value}
@@ -145,34 +145,32 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
                     data.loc[i,col] = redata[col]*active.loc[i-1,col]
                 redata = data.iloc[i]
             data /= data.iloc[0]
- 
-
             color = {'KRUR': 'red',  'KUSD':'blue' , 'BTC':'orange'}
             color_light = {'KRUR': 'rgba(255, 150, 150, 0.2)',  'KUSD':'rgba(150, 200, 255, 0.2)' , 'BTC':'rgba(255, 200, 150, 0.2)'}
             legend = {'KRUR': True,  'KUSD': True , 'BTC': True}
-            # capital =list( map(lambda x:x*2 , capital))
-            for j in range(len(data.columns)):
-                for i in range(len(date)-1):
+            for i in range(len(date)-1):
+                for j in range(len(data.columns)):
                     if data.columns[j] == active.iloc[i,1]:
-                                                
                         fig.add_trace(go.Scatter(x=date[i:i+2],
                                                 y=capital[i:i+2],
                                                 mode='lines',
                                                 line=dict(color=color[data.columns[j]]),
-                                                name = data.columns[j],#текст если i четная! при пересчете надо умножать на актив процент выигрыша! а не на рубли и переводить! иначе из-за курсов другие числа!
-                                                text='''в рублях:{},<br> в долларах:{},<br> в биткойнах: {}'''.format(round(sum*capital[i]*dfs[i].loc[ data.columns[0],currency],2),
-                                                                                                                                round(sum*capital[i]*dfs[i].loc[ data.columns[1],currency],2), 
-                                                                                                                                round(sum*capital[i]*dfs[i].loc[ data.columns[2],currency],4),
+                                                name = data.columns[j],
+                                                text='''RUB: {:,.2f} <span style="color:green; font-style:italic; font-size:smaller; border: 1px solid #fff; padding: 4px;">+{:,.2f}</span><br>USD:{:,.2f} <span style="color:green; font-style:italic;font-size:smaller">+{:,.2f}</span><br>BTC: {:,.2f}  <span style="color:green; font-style:italic;font-size:smaller">+{:,.2f}</span>'''.format(
+                                                                                                                                round(sum*capital[i]*dfs[i].loc[ data.columns[0],currency],2),  round(sum*capital[i]*dfs[i].loc[ data.columns[0],currency] / sum*dfs[i].loc[ data.columns[0],currency],2) ,
+                                                                                                                                round(sum*capital[i]*dfs[i].loc[ data.columns[1],currency],2), round(sum*capital[i]*dfs[i].loc[ data.columns[1],currency]  / sum*dfs[i].loc[ data.columns[0],currency],4) ,
+                                                                                                                                round(sum*capital[i]*dfs[i].loc[ data.columns[2],currency],8), round(sum*capital[i]*dfs[i].loc[ data.columns[2],currency]  / sum*dfs[i].loc[ data.columns[0],currency],4) ).replace(',', ' '),
+                                                                                                                                
+                                                                                                                                showlegend = True if any(list(legend.values())) > 0 else False,
                                                                                                                                 ),
-                                                # yaxis='y2',  # Указание, что эта кривая относится к второй оси
-
-                                                showlegend=legend[data.columns[j]],
-                                                legendgroup=data.columns[j],),
-                                                row=1,  # указываем номер ряда
+                                                                                                                              
+                                                row=1,
                                                 col=1  
                                                 )
                         legend[data.columns[j]] = False
                         
+
+
                         fig.add_trace(go.Scatter(x=date[i:i+2],
                                                             y=[i for i in data.iloc[i:i+2,j]],
                                                             # y=data.iloc[i:i+2,j],
@@ -190,6 +188,7 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
                                                             # hoverinfo='skip'
                                                             #hovertemplate='%{x}: <br>%{name}'
                                                             )
+
                         continue
                     # if data.columns[j] == 'KRUR':
                     #     color = 'red'
