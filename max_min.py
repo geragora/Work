@@ -99,7 +99,7 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
             else:
                 title = 'График падения капитала, при неправильном перераспределении активов'
             capital = [1]
-            c = 0
+            # c = 0
             cap=[]
             for i in range(1, len(dfs)):
                 list_f = pd.DataFrame(dfs[i - 1])
@@ -330,6 +330,8 @@ def inaction(currency,dfs, date):
 
 
 def experience(dfs, date, currency):
+    color_light = {'KRUR': 'rgba(255, 150, 150, 0.2)',  'KUSD':'rgba(150, 200, 255, 0.2)' , 'BTC':'rgba(255, 200, 150, 0.2)'}
+
     #json файл в котором активы и их история! колонка дейсвтие (действие - актив над которым оно)
     #на два датафрейма разбить можно! в одном история активов! в другом история действий над активами! там индекс дата, колонка актив и ддействие!
     # но нужно еще указываать что перекладывал что то куда-то, нет! можно просто +где то и - где то 
@@ -341,19 +343,25 @@ def experience(dfs, date, currency):
     hystory = {
             'KRUR':
                     {
-                         date[0]:{'->':'BTC'},
-                         date[4]:{'+': 3000},
+                         date[0]:{'->':'BTC', 'value':100},#'BTC':100
+                         date[2]:{'+': 3000},
                         #  date[2]:{'+': 2000},
                         #  date[3]:{'-': 3000},
                         #  date[4]:{'+': 3000},
-                         date[8]:{'-': 3000}
+                         date[6]:{'-': 1000, '+':300},# если захочешь повторить одну и ту же операцию то просто сложение делать по ключу!!! 
+                         #можно просто перед строительством графика пройтись циклом по всем словарям и проссумировать операции
+                         date[8]:{'-': 1000},
+
+
                     },
 
             'KUSD':
                     {
                          date[1]:{'->':'BTC', 'value':100},
                          date[3]:{'+': 40},
-                         date[4]:{'-': 50}
+                         date[4]:{'-': 50},
+                         date[9]:{'+': 30},
+
                     },
             # 'BTC':
             #         {
@@ -375,7 +383,9 @@ def experience(dfs, date, currency):
         'KUSD': [100],
         # 'BTC' : [0.02]
     }
-    fig = go.Figure()
+    # fig = go.Figure()
+    fig = make_subplots(rows=1, cols=2, subplot_titles=[ 'История изменения активов', 'Изменение капитала'])
+
     # for i in list(portfel.keys()):
     #     cur_port[i][0] *= dfs[0].loc[currency, i]
     start = 0
@@ -400,7 +410,9 @@ def experience(dfs, date, currency):
                                                             text=''' + {} '''.format(hystory[j][date[i]]['+']
                                                                                                                     
                                                                                                                                   )
-                                                            ))
+                                                            ),
+                                                            row=1,
+                                                            col=1 ) 
                     port[j] =  (port[j] + hystory[j][date[i]]['+']/portfel[j])
                     cur_port[j].append(cur_port[j][-1] + hystory[j][date[i]]['+'])
                 elif list(hystory[j][date[i]].keys())[0] == '-':
@@ -414,7 +426,9 @@ def experience(dfs, date, currency):
                                                             text=''' - {} '''.format(hystory[j][date[i]]['-']
                                                                                                                     
                                                                                                                                   )
-                                                            ))
+                                                            ),
+                                                            row=1,
+                                                            col=1 )
                     port[j] = (port[j] - hystory[j][date[i]]['-']/portfel[j])
                     cur_port[j].append(cur_port[j][-1] - hystory[j][date[i]]['-'])
                                        
@@ -429,7 +443,9 @@ def experience(dfs, date, currency):
                                                             text='''без изменений'''
                                                                                                                     
                                                                                                                                   )
-                                                            )
+                                                            ,
+                                                            row=1,
+                                                            col=1 )
             except:
                 if i!=len(date)-1:
                  
@@ -443,7 +459,9 @@ def experience(dfs, date, currency):
                                                             text='''без изменений'''
                                                                                                                     
                                                                                                                                   )
-                                                            )
+                                                            ,
+                                                            row=1,
+                                                            col=1 )
                 cur_port[j].append(cur_port[j][-1])
 
                     
@@ -451,8 +469,14 @@ def experience(dfs, date, currency):
         for k in list(cur_port.keys()):
             sum += cur_port[k][i]* dfs[i].loc[option, k]
 
-        try:
-         if list(hystory[j][date[i]].keys())[0] == '+' or list(hystory[j][date[i]].keys())[0] == '-':
+        c = 0
+        for j in list(portfel.keys()):
+                try:
+                    if list(hystory[j][date[i]].keys())[0] == '+' or list(hystory[j][date[i]].keys())[0] == '-':
+                        c += 1
+                except:
+                    pass
+        if c>0:
             fig.add_trace(go.Scatter(x=[date[i],date[i]],
                                                 y = [pre_sum, sum/start],
                                                 mode='lines',
@@ -463,36 +487,47 @@ def experience(dfs, date, currency):
                                                     ,dfs[i].loc['KRUR', 'KUSD'],sum/start
                                                                                                     
                                                                                                                         )
-                                                ))
+                                                ),
+                                                            row=1,
+                                                            col=2 )
             fig.add_trace(go.Scatter(x=date[i-1:i+1],
-                                    
-                                                    y = [pre_sum, pre_sum],
-                                                    mode='lines',
-                                                    line=dict(color='white'),
-                                                    name = 'Капитал',
-                                                    text='''вв рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
-                                                        sum
-                                                        ,dfs[i].loc['KRUR', 'KUSD'],sum/start
-                                                                                                        
-                                                                                                                            )
-                                                    ))
-        except:
-
-            fig.add_trace(go.Scatter(x=date[i-1:i+1],
-                                    
-                                                    y = [pre_sum, sum/start],
-                                                    mode='lines',
-                                                    line=dict(color='white'),
-                                                    name = 'Капитал',
-                                                    text='''в рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
-                                                        sum
-                                                        ,dfs[i].loc['KRUR', 'KUSD'],sum/start
-                                                                                                        
-                                                                                                                            )
-                                                    ))
                                                     
+                                                                    y = [pre_sum, pre_sum],
+                                                                    mode='lines',
+                                                                    line=dict(color='white'),
+                                                                    name = 'Капитал',
+                                                                    text='''вв рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
+                                                                        sum
+                                                                        ,dfs[i].loc['KRUR', 'KUSD'],sum/start
+                                                                                                                        
+                                                                                                                                            )
+                                                                    ),
+                                                            row=1,
+                                                            col=2 )
+
+                    
+        else:
+                fig.add_trace(go.Scatter(x=date[i-1:i+1],
+                                        
+                                                        y = [pre_sum, sum/start],
+                                                        mode='lines',
+                                                        line=dict(color='white'),
+                                                        name = 'Капитал',
+                                                        text='''в рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
+                                                            sum
+                                                            ,dfs[i].loc['KRUR', 'KUSD'],sum/start
+                                                                                                            
+                                                                                                                                )
+                                                        ),
+                                                            row=1,
+                                                            col=2 )
+                                                            
         pre_sum = sum/start
         sum = 0
+
+    fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor=color_light[currency])
+
+    fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor=color_light[currency])
 #помнить про курсы валют мб где то надо домножать на коэфы изменений
     return st.plotly_chart(fig)
     
@@ -509,7 +544,7 @@ dfs1, date1 = download(1)
 
 
 # st.write(dfs1[:5], date1[:10])
-experience(dfs, date[:10], option)
+experience(dfs, date[:30], option)
 
 
 # # Получите данные для BTC-USD
