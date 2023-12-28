@@ -156,12 +156,12 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
                                                 mode='lines',
                                                 line=dict(color=color[data.columns[j]]),
                                                 name = data.columns[j],
-                                                text='''RUB: {:,.2f} <span style="color:green; font-style:italic; font-size:smaller; border: 1px solid #fff; padding: 4px;">+{:,.2f}</span><br>USD:{:,.2f} <span style="color:green; font-style:italic;font-size:smaller">+{:,.4f}</span><br>BTC: {:,.5f}  <span style="color:green; font-style:italic;font-size:smaller">+{:,.5f}</span> <br>{}'''.format(
+                                                text='''RUB: {:,.2f} <span style="color:green; font-style:italic; font-size:smaller; border: 1px solid #fff; padding: 4px;">+{:,.2f}</span><br>USD:{:,.2f} <span style="color:green; font-style:italic;font-size:smaller">+{:,.4f}</span><br>BTC: {:,.5f}  <span style="color:green; font-style:italic;font-size:smaller">+{:,.5f}'''.format(
                                                                                                                                 round(sum*capital[i]*dfs[i].loc[ data.columns[0],currency],2),  round(sum*capital[i]*dfs[i].loc[data.columns[1],currency]  / sum*dfs[0].loc[ data.columns[0],currency],2) ,
                                                                                                                                 round(sum*capital[i]*dfs[i].loc[ data.columns[1],currency],2), round(sum*capital[i]*dfs[i].loc[data.columns[1],currency]  / sum*dfs[0].loc[ data.columns[1],currency],5) ,
                                                                                                                                 round(sum*capital[i]*dfs[i].loc[ data.columns[2],currency],8), round(sum*capital[i]*dfs[i].loc[data.columns[2],currency]  / sum*dfs[0].loc[ data.columns[2],currency],5) ).replace(',', ' '),
                                                                                                                                 
-                                                                                                                                showlegend = True if any(list(legend.values())) > 0 else False,
+                                                                                                                                showlegend =any(list(legend.values())),
                                                                                                                                 ),
                                                                                                                               
                                                 row=1,
@@ -193,7 +193,7 @@ def MAX_MIN(currency, func,funcx, dfs, date,sum, portfel):
                     # if data.columns[j] == 'KRUR':
                     #     color = 'red'
                     # elif data.columns[j] == 'KUSD':
-                    #     color = 'blue'
+                    #     color = 'blue'    
                     # else:
                     #     color = 'orange'
                     # fig.add_trace(go.Scatter(x=date[i:i+2],
@@ -338,7 +338,7 @@ def experience(dfs, date, currency):
     portfel = {
         'KRUR': 10000,
         'KUSD': 100,
-        # 'BTC' : 0.02
+        # 'BTC' : 1
     }
     hystory = {
             'KRUR':
@@ -358,16 +358,21 @@ def experience(dfs, date, currency):
             'KUSD':
                     {
                          date[1]:{'->':'BTC', 'value':100},
-                         date[3]:{'+': 40},
+                         date[3]:{'+': 120},
                          date[4]:{'-': 50},
                          date[9]:{'+': 30},
+                         date[13]:{'+': 30},
+                         date[15]:{'+': 30},
+
+                         #можжно сделать ключи только плюс, а значения уже и отрицательные могут быть! тогда условие с минусом пропадет! просто всегда суммируем и все!
 
                     },
-            # 'BTC':
-            #         {
-            #              date[4]:{'->':'BTC', 'value':3000,'data':date[0]},
-            #              date[5]:[{'+': 600,'-': 250}]                         
-            #         },
+            'BTC':
+                    {
+                         date[4]:{'->':'BTC', 'value':3000,'data':date[0]},
+                        #  date[5]:[{'+': 600,'-': 250}]    
+                        date[15]:{'+':0.4}                     
+                    },
 
     }
     port = {
@@ -390,7 +395,7 @@ def experience(dfs, date, currency):
     #     cur_port[i][0] *= dfs[0].loc[currency, i]
     start = 0
     for k in list(cur_port.keys()):
-        start += cur_port[k][-1]* dfs[0].loc[option, k]
+        start += cur_port[k][0]* dfs[0].loc[option, k]
     
     sum, pre_sum = 1,1
     for i in range(len(date)):
@@ -440,7 +445,10 @@ def experience(dfs, date, currency):
                                                             mode='lines',
                                                             line=dict(color=color[j]),
                                                             name = j,
-                                                            text='''без изменений'''
+                                                            text='в рублях: {}'.format(cur_port[j4][-1]* dfs[i].loc[option, j],
+                                                            cur_port[j][-1]* dfs[i].loc[option, j]
+                                                                                        )
+
                                                                                                                     
                                                                                                                                   )
                                                             ,
@@ -456,7 +464,12 @@ def experience(dfs, date, currency):
                                                             mode='lines',
                                                             line=dict(color=color[j]),
                                                             name = j,
-                                                            text='''без изменений'''
+                                                            # text='в рублях: {}'.format(cur_port[j][-1]* dfs[i].loc[option, j])
+
+                                                            text='''RUB:{},<br>USD:{},<br>BTC:{}'''.format(
+                                                            cur_port[j][-1] * dfs[i].loc['KRUR',j],
+                                                            cur_port[j][-1] * dfs[i].loc['KUSD',j],
+                                                            cur_port[j][-1] * dfs[i].loc['BTC', j])
                                                                                                                     
                                                                                                                                   )
                                                             ,
@@ -465,9 +478,11 @@ def experience(dfs, date, currency):
                 cur_port[j].append(cur_port[j][-1])
 
                     
-          
+        sum_change = 0
         for k in list(cur_port.keys()):
-            sum += cur_port[k][i]* dfs[i].loc[option, k]
+            sum += cur_port[k][-1]* dfs[i].loc[option, k]
+            sum_change += (cur_port[k][-1] - cur_port[k][-2]) * dfs[i].loc[option, k]
+
 
         c = 0
         for j in list(portfel.keys()):
@@ -477,33 +492,37 @@ def experience(dfs, date, currency):
                 except:
                     pass
         if c>0:
+            fig.add_trace(go.Scatter(x=date[i-1:i+1],
+                                                    
+                                                                    y = [pre_sum, pre_sum* dfs[i].loc[option, k]/ dfs[i-1].loc[option, k]],
+                                                                    mode='lines',
+                                                                    line=dict(color='white'),
+                                                                    name = 'Капитал',
+                                                                    text='''RUB:{},<br>USD:{},<br>BTC:{}, date[i-1]:{}'''.format(
+                                                                        sum * dfs[i-1].loc['KRUR',option],
+                                                                        sum * dfs[i-1].loc['KUSD',option],
+                                                                        sum * dfs[i-1].loc['BTC', option],
+                                                                        date[i-1]                                           
+                                                                                                                                            )
+                                                                    ),
+                                                            row=1,
+                                                            col=2 )
             fig.add_trace(go.Scatter(x=[date[i],date[i]],
-                                                y = [pre_sum, sum/start],
+                                                y = [pre_sum* dfs[i].loc[option, k]/ dfs[i-1].loc[option, k], sum/start],
                                                 mode='lines',
                                                 line=dict(color='white', dash = 'dash'),
                                                 name = 'Капитал',
-                                                text='''в рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
-                                                    sum
-                                                    ,dfs[i].loc['KRUR', 'KUSD'],sum/start
+                                                        text='''RUB:{},<br>USD:{},<br>BTC:{}, date[i]:{}'''.format(
+                                                            sum * dfs[i].loc['KRUR',option],
+                                                            sum * dfs[i].loc['KUSD',option],
+                                                            sum * dfs[i].loc['BTC', option],
+                                                            date[i]
                                                                                                     
                                                                                                                         )
                                                 ),
                                                             row=1,
                                                             col=2 )
-            fig.add_trace(go.Scatter(x=date[i-1:i+1],
-                                                    
-                                                                    y = [pre_sum, pre_sum],
-                                                                    mode='lines',
-                                                                    line=dict(color='white'),
-                                                                    name = 'Капитал',
-                                                                    text='''вв рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
-                                                                        sum
-                                                                        ,dfs[i].loc['KRUR', 'KUSD'],sum/start
-                                                                                                                        
-                                                                                                                                            )
-                                                                    ),
-                                                            row=1,
-                                                            col=2 )
+
 
                     
         else:
@@ -513,9 +532,13 @@ def experience(dfs, date, currency):
                                                         mode='lines',
                                                         line=dict(color='white'),
                                                         name = 'Капитал',
-                                                        text='''в рублях:{},<br> в pre_sum:{},<br> в sum:{}'''.format(
-                                                            sum
-                                                            ,dfs[i].loc['KRUR', 'KUSD'],sum/start
+                                                        text='''RUB:{},<br>USD:{},<br>BTC:{}, date[i-1]:{}'''.format(
+                                                            sum * dfs[i-1].loc['KRUR',option],
+                                                            sum * dfs[i-1].loc['KUSD',option],
+                                                            sum * dfs[i-1].loc['BTC', option],
+                                                            date[i-1]
+
+                                                            # ,dfs[i].loc['KRUR', 'KUSD'],sum/start
                                                                                                             
                                                                                                                                 )
                                                         ),
