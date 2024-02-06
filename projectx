@@ -1,315 +1,225 @@
+import pandas as pd
 import streamlit as st
 import yfinance as yf
-import plotly.express as px
-from datetime import date, timedelta, datetime
-import pandas as pd
+import plotly_express as px
+import plotly.graph_objects as go
+from datetime import timedelta, datetime, date
+import numpy as np
 
-file_path = 'SMLNK.xlsx'
-df1 = pd.read_excel(file_path, sheet_name=0)
-df2 = pd.read_excel(file_path, sheet_name=1)
-df1['Дата'] = df1['Дата'].dt.strftime('%Y-%m-%d')
-df2['Дата'] = df2['Дата'].dt.strftime('%Y-%m-%d')
-df1.set_index("Дата", inplace=True)
-df2.set_index("Дата", inplace=True)
-lst1 = df1.index.values.tolist()
-lst2 = df2.index.values.tolist()
-st.title("Относительное изменение активов во времени")
-currencies = ["USD", "RUB", "BTC", "SMLNK", "CTWK"]
-strategies = ['Лучший результат', 'Худший результат', 'Бездействие', 'Самостоятельные решения']
-st.sidebar.title('Меню настроек')
-asset_on_hands = st.sidebar.number_input("Введите количество у.е. Вашего актива:")
-selected_currency = st.sidebar.selectbox("Условные единицы в:", currencies, index=0)
-other_currencies = st.sidebar.multiselect("Активы:", currencies, default=currencies[1:])
-start_date = st.sidebar.date_input("Начало периода:", date(2023, 1, 1), format='YYYY-MM-DD')
-end_date = st.sidebar.date_input("Конец периода:", date(2023, 8, 1), format='YYYY-MM-DD')
-available_dates = [str(start_date + timedelta(days=i)) for i in range((end_date - start_date).days + 1)]
-date_objects = [datetime.strptime(date, "%Y-%m-%d") for date in available_dates]
-formatted_dates = [date.strftime("%Y-%m-%d") for date in date_objects]
-selected_dates = st.sidebar.multiselect("Выберите даты для отметки на графике:", formatted_dates)
-selected_strategy = st.sidebar.selectbox("Выберите стратегию инвестирования:", strategies, index=0)
-i = 0
+data_BTC_USD = yf.download("BTC-USD", start='2023-01-01', end='2024-01-01').Open
+data_BTC_RUB = yf.download("BTC-RUB", start='2023-01-01', end='2024-01-01').Open
 
-if st.button("Обновить данные и построить график"):
-    fig = px.line()
+data_RUB_USD = yf.download("RUBUSD=X", start='2023-01-01', end='2024-01-01').Open
+data_RUB_USD = pd.Series(index=data_BTC_USD.index, data=data_RUB_USD)
+data_RUB_USD = data_RUB_USD.ffill()
+data_RUB_USD = data_RUB_USD.bfill()
+
+data_USD_RUB = yf.download("USDRUB=X", start='2023-01-01', end='2024-01-01').Open
+data_USD_RUB = pd.Series(index=data_BTC_USD.index, data=data_USD_RUB)
+data_USD_RUB = data_USD_RUB.ffill()
+data_USD_RUB = data_USD_RUB.bfill()
+
+data_USD_BTC = 1 / data_BTC_USD
+data_RUB_BTC = 1 / data_BTC_RUB
+
+strategies = ['Максимум', 'Минимум', 'Бездействие', 'Пользователь']
+cols = ['BTC', 'USD', 'RUB', 'Капитал RUB', 'Капитал USD', 'Капитал BTC']
+currencies = ['BTC', 'USD', 'RUB']
+cash_in = {'RUB': 500000, 'USD': 4000, 'BTC': 1}
+capital = {currency: 0 for currency in currencies}
+colors = {'RUB': 'red', 'USD': 'green', 'BTC': 'yellow'}
+
+st.write('СТАРТОВЫЙ КАПИТАЛ:', pd.DataFrame(cash_in, index=['Количество']))
+strategy = st.multiselect('Стратегия:', strategies, default=strategies)
+c = st.selectbox('Валюта:', currencies)
+
+fig = px.line()
+
+for currency in cols:
+
+    result = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=cols, data=cash_in)
+
+for curr_out in currencies:
+    for curr_in in currencies:
+        if curr_out == curr_in:
+            capital[curr_in] += cash_in[curr_out]
+        else:
+            exchange_rate = globals()[f'data_{curr_out}_{curr_in}']
+            capital[curr_in] += cash_in[curr_out] * exchange_rate
+
+for currency in currencies:
+    result[f'Капитал {currency}'] = capital[currency]
+
+result = result.ffill()
+result = result.bfill()
+
+user_story = result.copy()
 
 
-    if "RUB" in selected_currency:
-        st.title('RUB')
-        relative_change_RUB = []
-        if "BTC" in other_currencies:
-            data_btc_RUB = yf.download("BTC-RUB", start=start_date, end=end_date, progress=False)
-            relative_change_btc_RUB = round((data_btc_RUB['Open'] / data_btc_RUB['Open'].iloc[0] - 1) * 100, 2)
-            fig.add_scatter(x=data_btc_RUB.index, y=relative_change_btc_RUB, name="BTC")
-            relative_change_RUB.append(relative_change_btc_RUB.iloc[-1])
-        if "USD" in other_currencies:
-            data_usd_RUB = yf.download("USDRUB=X", start=start_date, end=end_date, progress=False)
-            relative_change_usd_RUB = round((data_usd_RUB['Open'] / data_usd_RUB['Open'].iloc[0] - 1) * 100, 2)
-            fig.add_scatter(x=data_usd_RUB.index, y=relative_change_usd_RUB, name="USD")
-            relative_change_RUB.append(relative_change_usd_RUB.iloc[-1])
-        if "SMLNK" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                first_element = df1['RUB'].iloc[0]
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_smlnk_RUB = round(((df1["RUB"].iloc[aidd1:] - df1['RUB'].iloc[aidd1])
-                                                   / df1['RUB'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2+1], y=relative_change_smlnk_RUB, name="SMLNK")
-                relative_change_RUB.append(relative_change_smlnk_RUB.iloc[-1])
-        if "CTWK" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                first_element = df2['RUB'].iloc[0]
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_ctwk_RUB = round(((df2["RUB"].iloc[aidd1:] - df2['RUB'].iloc[aidd1])
-                                                  / df2['RUB'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2+1], y=relative_change_ctwk_RUB, name="CTWK")
-                relative_change_RUB.append(relative_change_ctwk_RUB.iloc[-1])
-        if selected_strategy in "Лучший результат":
-            income = max(relative_change_RUB)
-            if income < 0:
-                st.write(f'Лучший результат: не приобретать других активов')
+def max_min(money, currencies, currx, strategy):
+
+    df = pd.DataFrame(index=data_BTC_USD.index, columns=list(money.columns))
+    df.iloc[0] = money.iloc[0]
+
+    pct = pd.DataFrame(index=data_BTC_USD.index, columns=currencies, data={'RUB': 0, 'USD': 0, 'BTC': 0})
+    pct.iloc[0] = 0
+
+    for i in range(0, len(data_BTC_USD.index) - 1):
+        for cur in currencies:
+            pct[cur].iloc[i + 1] = (money[f'Капитал {cur}'].iloc[i + 1] - money[f'Капитал {cur}'].iloc[i]) / \
+                                   money[f'Капитал {cur}'].iloc[i]
+
+            if np.all(pct < 0):
+                df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {cur}'].iloc[i]
             else:
-                st.write(f'Лучший результат: {round((income * asset_on_hands/100) + asset_on_hands,2)}'
-                         f' {selected_currency}')
-        if selected_strategy in "Худший результат":
-            income = min(relative_change_RUB)
-            if income > 0:
-                st.write(f'Худший результат: остаться в этом активе')
-            else:
-                st.write(f'Худший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)}'
-                         f'{selected_currency}')
-        if selected_strategy in 'Бездействие':
-            data_rub_RUB = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_rub_RUB = round((data_rub_RUB['Open'] / data_rub_RUB['Open']), 2)
-            fig.add_scatter(x=data_rub_RUB.index, y=relative_change_rub_RUB, name="RUB")
+                if strategy == 'Минимум':
+                    percentage_col = pct.iloc[i].idxmin()
+                elif strategy == 'Максимум':
+                    percentage_col = pct.iloc[i].idxmax()
 
-    if "USD" in selected_currency:
-        st.title('USD')
-        relative_change_USD = []
-        if "RUB" in other_currencies:
-            data_rub_USD = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_rub_USD = round((data_rub_USD['Open'] / data_rub_USD['Open'].iloc[0] - 1) * 100, 2)
-            fig.add_scatter(x=data_rub_USD.index, y=relative_change_rub_USD, name="RUB")
-            relative_change_USD.append(relative_change_rub_USD.iloc[-1])
-        if "BTC" in other_currencies:
-            data_btc_USD = yf.download("BTC-USD", start=start_date, end=end_date, progress=False)
-            relative_change_btc_USD = round((data_btc_USD['Open'] / data_btc_USD['Open'].iloc[0] - 1) * 100, 2)
-            fig.add_scatter(x=data_btc_USD.index, y=relative_change_btc_USD, name="BTC")
-            relative_change_USD.append(relative_change_btc_USD.iloc[-1])
-        if "SMLNK" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                first_element = df1['RUB'].iloc[0]
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_smlnk_USD = round(((df1["USD"].iloc[aidd1:] - df1['USD'].iloc[aidd1])
-                                                   / df1['USD'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2 + 1], y=relative_change_smlnk_USD, name="SMLNK")
-                relative_change_USD.append(relative_change_smlnk_USD.iloc[-1])
-        if "CTWK" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                first_element = df2['USD'].iloc[0]
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_ctwk_USD = round(((df2['USD'].iloc[aidd1:] - df2['USD'].iloc[aidd1])
-                                                  / df2['USD'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2+1], y=relative_change_ctwk_USD, name="CTWK")
-                relative_change_USD.append(relative_change_ctwk_USD.iloc[-1])
-        if selected_strategy in "Лучший результат":
-            income = max(relative_change_USD)
-            if income < 0:
-                st.write(f'Лучший результат: не приобретать других активов')
-            else:
-                st.write(f'Лучший результат: {round((income * asset_on_hands/100) + asset_on_hands,2)} '
-                         f'{selected_currency}')
-        if selected_strategy in "Худший результат":
-            income = min(relative_change_USD)
-            if income > 0:
-                st.write(f'Худший результат: остаться в этом активе')
-            else:
-                st.write(f'Худший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)}'
-                         f' {selected_currency}')
-        if selected_strategy in 'Бездействие':
-            data_usd_USD = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_usd_USD = round((data_usd_USD['Open'] / data_usd_USD['Open']), 2)
-            fig.add_scatter(x=data_usd_USD.index, y=relative_change_usd_USD, name="USD")
-        for date_to_mark in selected_dates:
-            i += 1
-            fig.add_scatter(x=[date_to_mark], y=[0], mode='markers', name=f'B{i}', marker=dict(size=10, color='red'))
+                if cur == percentage_col:
+                    df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {cur}'].iloc[i] * (1 + pct[percentage_col].iloc[i])
+                else:
+                    exchange_rate = globals()[f'data_{percentage_col}_{cur}'].iloc[0]
+                    df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {percentage_col}'].iloc[i] * exchange_rate
 
-    if "BTC" in selected_currency:
-        st.title('BTC')
-        relative_change_BTC = []
-        if "RUB" in other_currencies:
-            data_rub_BTC = yf.download("BTC-RUB", start=start_date, end=end_date, progress=False)
-            relative_change_rub_BTC = round((data_rub_BTC['Open'].iloc[0] / data_rub_BTC['Open'] - 1) * 100, 2)
-            fig.add_scatter(x=data_rub_BTC.index, y=relative_change_rub_BTC, name="RUB")
-            relative_change_BTC.append(relative_change_rub_BTC.iloc[-1])
-        if "USD" in other_currencies:
-            data_btc_USD = yf.download("BTC-USD", start=start_date, end=end_date, progress=False)
-            relative_change_usd_BTC = round((data_btc_USD['Open'].iloc[0] / data_btc_USD['Open'] - 1) * 100, 2)
-            fig.add_scatter(x=data_btc_USD.index, y=relative_change_usd_BTC, name="USD")
-            relative_change_BTC.append(relative_change_usd_BTC.iloc[-1])
-        if "SMLNK" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_smlnk_BTC = round(((df1["BTC"].iloc[aidd1:] - df1['BTC'].iloc[aidd1])
-                                                   / df1['BTC'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2 + 1], y=relative_change_smlnk_BTC, name="SMLNK")
-                relative_change_BTC.append(relative_change_smlnk_BTC.iloc[-1])
-        if "CTWK" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                first_element = df2['CTWK'].iloc[0]
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_ctwk_BTC = round(((df2['CTWK'].iloc[aidd1:] - df2['CTWK'].iloc[aidd1])
-                                                  / df2['CTWK'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2+1], y=relative_change_ctwk_BTC, name="CTWK")
-                relative_change_BTC.append(relative_change_ctwk_BTC.iloc[-1])
-        if selected_strategy in "Лучший результат":
-            income = max(relative_change_BTC)
-            if income < 0:
-                st.write(f'Лучший результат: не приобретать других активов')
-            else:
-                st.write(f'Лучший результат: {round((income * asset_on_hands/100) + asset_on_hands,2)} '
-                         f'{selected_currency}')
-        if selected_strategy in "Худший результат":
-            income = min(relative_change_BTC)
-            if income > 0:
-                st.write(f'Худший результат: остаться в этом активе')
-            else:
-                st.write(f'Худший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)} '
-                         f'{selected_currency}')
-        if selected_strategy in 'Бездействие':
-            data_btc_BTC = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_btc_BTC = round((data_btc_BTC['Open'] / data_btc_BTC['Open']), 2)
-            fig.add_scatter(x=data_btc_BTC.index, y=relative_change_btc_BTC, name="USD")
-        for date_to_mark in selected_dates:
-            i += 1
-            date_to_mark_object = datetime.strptime(date_to_mark, "%d-%m-%Y")
-            fig.add_scatter(x=[date_to_mark_object], y=[0], mode='markers', name=f'B{i}', marker=dict(size=10))
+    fig.add_scatter(x=data_BTC_USD.index, y=df[f'Капитал {currx}'] / df[f'Капитал {currx}'].iloc[0],
+                    mode='lines', name=strategy, line=dict(color='red' if strategy == 'Максимум' else 'blue'))
 
-    if "SMLNK" in selected_currency:
-        st.title('SMLNK')
-        relative_change_SMLNK = []
-        if "RUB" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_smlnk_BTC = round(
-                    ((df1['RUB'].iloc[aidd1]) / df1["RUB"].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2 + 1], y=relative_change_smlnk_BTC, name="RUB")
-                relative_change_SMLNK.append(relative_change_smlnk_BTC.iloc[-1])
-        if "USD" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_usd_SMLNK = round(
-                    ((df1['USD'].iloc[aidd1]) / df1['USD'].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2 + 1], y=relative_change_usd_SMLNK, name="USD")
-                relative_change_SMLNK.append(relative_change_usd_SMLNK.iloc[-1])
-        if "BTC" in other_currencies:
-            if str(start_date) or str(end_date) in df1.index:
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_btc_SMLNK = round(
-                    ((df1['BTC'].iloc[aidd1]) / df1['BTC'].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2 + 1], y=relative_change_btc_SMLNK, name="BTC")
-                relative_change_SMLNK.append(relative_change_btc_SMLNK.iloc[-1])
-        if "CTWK" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                first_element = df1['CTWK'].iloc[0]
-                aidd1 = lst1.index(str(start_date))
-                aidd2 = lst1.index(str(end_date))
-                relative_change_ctwk_SMLNK = round(((df1['CTWK'].iloc[aidd1:] - df1['CTWK'].iloc[aidd1])
-                                                    / df1['CTWK'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df1.index[aidd1:aidd2+1], y=relative_change_ctwk_SMLNK, name="CTWK")
-                relative_change_SMLNK.append(relative_change_ctwk_SMLNK.iloc[-1])
-        if selected_strategy in "Лучший результат":
-            income = max(relative_change_SMLNK)
-            if income < 0:
-                st.write(f'Лучший результат: не приобретать других активов')
-            else:
-                st.write(
-                    f'Лучший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)} '
-                    f'{selected_currency}')
-        if selected_strategy in "Худший результат":
-            income = min(relative_change_SMLNK)
-            if income > 0:
-                st.write(f'Худший результат: остаться в этом активе')
-            else:
-                st.write(
-                    f'Худший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)}'
-                    f' {selected_currency}')
-        if selected_strategy in 'Бездействие':
-            data_btc_BTC = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_btc_BTC = round((data_btc_BTC['Open'] / data_btc_BTC['Open']), 2)
-            fig.add_scatter(x=data_btc_BTC.index, y=relative_change_btc_BTC, name="USD")
-
-    if "CTWK" in selected_currency:
-        st.title('CTWK')
-        relative_change_CTWK = []
-        if "RUB" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_rub_CTWK = round(
-                    ((df2['RUB'].iloc[aidd1]) / df2["RUB"].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2 + 1], y=relative_change_rub_CTWK, name="RUB")
-                relative_change_CTWK.append(relative_change_rub_CTWK.iloc[-1])
-        if "USD" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_usd_CTWK = round(
-                    ((df2['USD'].iloc[aidd1]) / df2['USD'].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2 + 1], y=relative_change_usd_CTWK, name="USD")
-                relative_change_CTWK.append(relative_change_usd_CTWK.iloc[-1])
-        if "BTC" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_btc_CTWK = round(
-                    ((df2['BTC'].iloc[aidd1]) / df2['BTC'].iloc[aidd1:] - 1) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2 + 1], y=relative_change_btc_CTWK, name="BTC")
-                relative_change_CTWK.append(relative_change_btc_CTWK.iloc[-1])
-        if "SMLNK" in other_currencies:
-            if str(start_date) or str(end_date) in df2.index:
-                first_element = df2['CTWK'].iloc[0]
-                aidd1 = lst2.index(str(start_date))
-                aidd2 = lst2.index(str(end_date))
-                relative_change_ctwk_BTC = round(((df2['SMLNK'].iloc[aidd1:] - df2['SMLNK'].iloc[aidd1])
-                                                  / df2['SMLNK'].iloc[aidd1]) * 100, 2)
-                fig.add_scatter(x=df2.index[aidd1:aidd2+1], y=relative_change_ctwk_BTC, name="SMLNK")
-                relative_change_CTWK.append(relative_change_ctwk_BTC.iloc[-1])
-        if selected_strategy in "Лучший результат":
-            income = max(relative_change_CTWK)
-            if income < 0:
-                st.write(f'Лучший результат: не приобретать других активов')
-            else:
-                st.write(
-                    f'Лучший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)} '
-                    f'{selected_currency}')
-        if selected_strategy in "Худший результат":
-            income = min(relative_change_CTWK)
-            if income > 0:
-                st.write(f'Худший результат: остаться в этом активе')
-            else:
-                st.write(
-                    f'Худший результат: {round((income * asset_on_hands / 100) + asset_on_hands, 2)}'
-                    f' {selected_currency}')
-        if selected_strategy in 'Бездействие':
-            data_btc_BTC = yf.download("RUBUSD=X", start=start_date, end=end_date, progress=False)
-            relative_change_btc_BTC = round((data_btc_BTC['Open'] / data_btc_BTC['Open']), 2)
-            fig.add_scatter(x=data_btc_BTC.index, y=relative_change_btc_BTC, name="USD")
+    return fig
 
 
-    for trace in fig.data:
-        trace.update(text=trace.y)
+def inaction(money, currx):
 
-    fig.update_layout(
-        xaxis_title="Дата",
-        yaxis_title="Относительное изменение, %"
-    )
+    fig.add_trace(go.Scatter(x=data_BTC_USD.index, y=money[f'Капитал {currx}'] /
+                            money[f'Капитал {currx}'].iloc[0], mode='lines', name='Бездействие',
+                             line=dict(color='grey')))
 
-    st.plotly_chart(fig)
+    return fig
+
+
+def user_in_out(money, tr_date: str, currx, tr_type, cash_amount):
+
+    cap = {currency: 0 for currency in currencies}
+
+    if tr_type in ['Снять', 'Пополнить']:
+
+        money.loc[tr_date:, currx] += (-1) ** (tr_type == 'Снять') * cash_amount
+        cash_in_here = dict(money.loc[tr_date, money.columns[:3]])
+
+        for cur_out in currencies:
+            for cur_in in currencies:
+                if cur_out == cur_in:
+                    cap[cur_in] += cash_in_here[cur_out]
+                else:
+                    exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
+                    cap[cur_in] += cash_in_here[cur_out] * exchange_rate
+
+        for currency in currencies:
+            money.loc[tr_date:, f'Капитал {currency}'] = cap[currency]
+
+    money = money.bfill()
+
+    operations = [date(2023, 3, 12), date(2023, 3, 18), date(2023, 4, 19),
+                  date(2023, 5, 8), date(2023, 7, 1), date(2024, 1, 1)]
+
+    for i in range(len(operations) - 1):
+
+        mean = money[f'Капитал {c}'].loc[str(operations[i] - timedelta(days=1))] / money[f'Капитал {c}'].iloc[0]
+        ch = money[f'Капитал {c}'].loc[str(operations[i])] / money[f'Капитал {c}'].iloc[0]
+
+        fig.add_shape(
+            dict(
+                type='line',
+                x0=str(operations[i]),
+                x1=str(operations[i]),
+                y0=mean,
+                y1=ch,
+                yref='y',
+                line=dict(color='white', dash='dash')
+            )
+        )
+
+    return money
+
+
+def user_convert(money, tr_date: str, tr_type, cash_amount, cur_out, cur_in):
+
+    cap = {currency: 0 for currency in currencies}
+
+    if tr_type == 'Конвертировать':
+
+        exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
+        money.loc[tr_date:, cur_out] -= cash_amount
+        money.loc[tr_date:, cur_in] = money.loc[tr_date, cur_in] + cash_amount * exchange_rate
+
+    cash_in_here = dict(money.loc[tr_date, money.columns[:3]])
+
+    for cur_out in currencies:
+        for cur_in in currencies:
+            if cur_out == cur_in:
+                cap[cur_in] += cash_in_here[cur_out]
+            else:
+                exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
+                cap[cur_in] += cash_in_here[cur_out] * exchange_rate
+
+    for currency in currencies:
+        money.loc[tr_date:, f'Капитал {currency}'] = cap[currency]
+
+    money = money.bfill()
+    money = money.ffill()
+
+    return money
+
+
+def user_story_graph(money, currx):
+
+    user_in_out(user_story, '2023-03-12', 'BTC', 'Снять', 0.8)
+    # user_in_out(, '2023-03-12', 'BTC', 'Снять', 0.8)
+    # user_in_out(, '2023-03-12', 'BTC', 'Снять', 0.8)
+
+    user_in_out(user_story, '2023-03-18', 'RUB', 'Снять', 40000)
+    # user_in_out(user_story, '2023-03-18', 'RUB', 'Снять', 40000)
+    # user_in_out(maximum, '2023-03-18', 'RUB', 'Снять', 40000)
+
+    user_in_out(user_story, '2023-04-19', 'USD', 'Пополнить', 35000)
+    # user_in_out(minimum, '2023-04-19', 'USD', 'Пополнить', 35000)
+    # user_in_out(maximum, '2023-04-19', 'USD', 'Пополнить', 35000)
+
+    user_in_out(user_story, '2023-05-08', 'BTC', 'Пополнить', 0.96)
+    # user_in_out(minimum, '2023-05-08', 'BTC', 'Пополнить', 0.96)
+    # user_in_out(maximum, '2023-05-08', 'BTC', 'Пополнить', 0.96)
+
+    user_convert(user_story, '2023-06-01', 'Конвертировать', 0.27, 'BTC', 'USD')
+
+    user_in_out(user_story, '2023-07-01', 'BTC', 'Пополнить', 0.12)
+    # user_in_out(minimum, '2023-07-01', 'BTC', 'Пополнить', 0.12)
+    # user_in_out(maximum, '2023-07-01', 'BTC', 'Пополнить', 0.12)
+
+    user_convert(user_story, '2023-10-01', 'Конвертировать', 20000, 'RUB', 'USD')
+
+    operations = [date(2023, 1, 1), date(2023, 3, 12), date(2023, 3, 18), date(2023, 4, 19),
+                  date(2023, 5, 8), date(2023, 7, 1), date(2024, 1, 1)]
+
+    for i in range(len(operations) - 1):
+
+        fig.add_trace(go.Scatter(x=money.loc[str(operations[i]): str(operations[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(operations[i]): str(operations[i + 1] - timedelta(days=1)), f'Капитал {currx}']
+                                / money[f'Капитал {currx}'].iloc[0], showlegend=False, line=dict(color='white'), mode='lines'))
+    fig.add_trace(go.Scatter(name='Пользователь'))
+
+    return fig
+
+
+if c in currencies:
+    if 'Минимум' in strategy:
+        max_min(result, currencies, c, 'Минимум')
+    if 'Максимум' in strategy:
+        max_min(result, currencies, c, 'Максимум')
+    if 'Бездействие' in strategy:
+        inaction(result, c)
+    if 'Пользователь' in strategy:
+        user_story_graph(user_story, c)
+
+st.plotly_chart(fig)
+
