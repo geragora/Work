@@ -1,4 +1,5 @@
 import pandas as pd
+import psycopg2
 import streamlit as st
 import yfinance as yf
 import plotly_express as px
@@ -7,37 +8,68 @@ from datetime import timedelta, datetime, date
 import numpy as np
 
 data_BTC_USD = yf.download("BTC-USD", start='2023-01-01', end='2024-01-01').Open
-data_BTC_RUB = yf.download("BTC-RUB", start='2023-01-01', end='2024-01-01').Open
 
-data_RUB_USD = yf.download("RUBUSD=X", start='2023-01-01', end='2024-01-01').Open
-data_RUB_USD = pd.Series(index=data_BTC_USD.index, data=data_RUB_USD)
-data_RUB_USD = data_RUB_USD.ffill()
-data_RUB_USD = data_RUB_USD.bfill()
+data_BTC_RUB = yf.download("BTC-RUB", start='2023-01-01', end='2024-01-01').Open
 
 data_USD_RUB = yf.download("USDRUB=X", start='2023-01-01', end='2024-01-01').Open
 data_USD_RUB = pd.Series(index=data_BTC_USD.index, data=data_USD_RUB)
 data_USD_RUB = data_USD_RUB.ffill()
 data_USD_RUB = data_USD_RUB.bfill()
 
+data_RUB_USD = 1 / data_USD_RUB
+data_RUB_USD = pd.Series(index=data_BTC_USD.index, data=data_RUB_USD)
+data_RUB_USD = data_RUB_USD.ffill()
+data_RUB_USD = data_RUB_USD.bfill()
+
 data_USD_BTC = 1 / data_BTC_USD
 data_RUB_BTC = 1 / data_BTC_RUB
 
+data_GOLD_USD = yf.download('GC=F', start='2023-01-01', end='2024-01-01').Open / 31.105
+data_GOLD_USD = pd.Series(index=data_BTC_USD.index, data=data_GOLD_USD)
+data_GOLD_USD = data_GOLD_USD.ffill()
+data_GOLD_USD = data_GOLD_USD.bfill()
+data_USD_GOLD = 1 / data_GOLD_USD
+
+data_GOLD_RUB = data_GOLD_USD * data_USD_RUB
+data_RUB_GOLD = 1 / data_GOLD_RUB
+
+data_GOLD_BTC = data_GOLD_USD * data_USD_BTC
+data_BTC_GOLD = 1 / data_GOLD_BTC
+
+pct_RUB_USD = pd.Series(index=data_BTC_USD.index)
+pct_BTC_USD = pd.Series(index=data_BTC_USD.index)
+pct_GOLD_USD = pd.Series(index=data_BTC_USD.index)
+pct_USD_RUB = pd.Series(index=data_BTC_USD.index)
+
+for i in range(len(data_BTC_USD.index) - 1):
+    pct_RUB_USD.iloc[i] = ((data_RUB_USD.iloc[i + 1] / data_RUB_USD.iloc[i]) - 1) * 100
+    pct_BTC_USD.iloc[i] = ((data_BTC_USD.iloc[i + 1] / data_BTC_USD.iloc[i]) - 1) * 100
+    pct_GOLD_USD.iloc[i] = ((data_GOLD_USD.iloc[i + 1] / data_GOLD_USD.iloc[i]) - 1) * 100
+    pct_USD_RUB.iloc[i] = ((data_USD_RUB.iloc[i + 1] / data_USD_RUB.iloc[i]) - 1) * 100
+
 strategies = ['Максимум', 'Минимум', 'Бездействие', 'Пользователь']
-cols = ['BTC', 'USD', 'RUB', 'Капитал RUB', 'Капитал USD', 'Капитал BTC']
-currencies = ['BTC', 'USD', 'RUB']
-cash_in = {'RUB': 500000, 'USD': 4000, 'BTC': 1}
+cols = ['BTC', 'USD', 'RUB', 'GOLD', 'Капитал RUB', 'Капитал USD', 'Капитал BTC', 'Капитал GOLD']
+currencies = ['BTC', 'USD', 'RUB', 'GOLD']
+cash_in = {'RUB': 50000000, 'USD': 0, 'BTC': 0, 'GOLD': 0}
+colors = {'USD': 'blue', 'BTC': 'orange', 'RUB': 'red', 'GOLD': 'yellow'}
 capital = {currency: 0 for currency in currencies}
-colors = {'RUB': 'red', 'USD': 'green', 'BTC': 'yellow'}
+curpital = {currency: 0 for currency in currencies}
+nonriskrate = 5
+actions = [date(2023, 1, 1)]
+actions_assets = [date(2023, 1, 1)]
 
 st.write('СТАРТОВЫЙ КАПИТАЛ:', pd.DataFrame(cash_in, index=['Количество']))
 strategy = st.multiselect('Стратегия:', strategies, default=strategies)
-c = st.selectbox('Валюта:', currencies)
+c = st.selectbox('Вычисления в:', currencies)
 
 fig = px.line()
+figg = px.line()
 
 for currency in cols:
 
     result = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=cols, data=cash_in)
+    user_cur_graphs = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=cols[:4], data=cash_in)
+    user_story = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=cols, data=cash_in)
 
 for curr_out in currencies:
     for curr_in in currencies:
@@ -49,111 +81,238 @@ for curr_out in currencies:
 
 for currency in currencies:
     result[f'Капитал {currency}'] = capital[currency]
+    user_story[f'Капитал {currency}'] = capital[currency]
+    user_cur_graphs[f'{currency}/{c}'] = curpital[currency]
+
+for j in range(len(data_BTC_USD.index)):
+    for cur in currencies:
+        if cur != c:
+            exchange_rate = globals()[f'data_{cur}_{c}'].iloc[j]
+            converted_amount = user_cur_graphs[cur].iloc[j] * exchange_rate
+            user_cur_graphs[f'{cur}/{c}'].iloc[j] = converted_amount
+        else:
+            user_cur_graphs[f'{cur}/{c}'].iloc[j] = user_cur_graphs[cur].iloc[j]
+        if user_cur_graphs[f'{cur}/{c}'].iloc[j] == 0:
+            user_cur_graphs[f'{cur}/{c}'].iloc[j] = None
 
 result = result.ffill()
 result = result.bfill()
 
-user_story = result.copy()
+user_story = user_story.ffill()
+user_story = user_story.bfill()
+
+minx = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=list(result.columns)[-4:])
+maxx = pd.DataFrame(index=data_BTC_USD.index.strftime('%Y-%m-%d'), columns=list(result.columns)[-4:])
+v = pd.DataFrame()
+z = pd.DataFrame()
+i_1 = pd.DataFrame(columns=cols[:4])
+i_x = pd.DataFrame(columns=cols[:4])
+s_x = pd.DataFrame(columns=cols[:4])
+s_1 = pd.DataFrame(columns=cols[:4])
+w_1 = pd.DataFrame(columns=cols[:4])
+w_x = pd.DataFrame(columns=cols[:4])
+
+conn = psycopg2.connect(
+        dbname="app_invest",
+        user="postgres",
+        password="12345",
+        host="localhost",
+        port="5432"
+    )
+
+cur = conn.cursor()
 
 
-def max_min(money, currencies, currx, strategy):
+def minimum(money, currencies, c):
 
-    df = pd.DataFrame(index=data_BTC_USD.index, columns=list(money.columns))
-    df.iloc[0] = money.iloc[0]
+    minx.iloc[0] = money.iloc[0][-4:]
 
-    pct = pd.DataFrame(index=data_BTC_USD.index, columns=currencies, data={'RUB': 0, 'USD': 0, 'BTC': 0})
-    pct.iloc[0] = 0
+    pct = pd.DataFrame(index=data_BTC_USD.index, columns=currencies, data={'RUB': 0, 'USD': 0, 'BTC': 0, 'GOLD': 0})
 
     for i in range(0, len(data_BTC_USD.index) - 1):
         for cur in currencies:
-            pct[cur].iloc[i + 1] = (money[f'Капитал {cur}'].iloc[i + 1] - money[f'Капитал {cur}'].iloc[i]) / \
-                                   money[f'Капитал {cur}'].iloc[i]
+            if cur != c:
+                pct[cur].iloc[i] = ((globals()[f'data_{cur}_{c}'].iloc[i + 1] - globals()[f'data_{cur}_{c}'].iloc[i]) /
+                                    globals()[f'data_{cur}_{c}'].iloc[i])
 
-            if np.all(pct < 0):
-                df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {cur}'].iloc[i]
-            else:
-                if strategy == 'Минимум':
-                    percentage_col = pct.iloc[i].idxmin()
-                elif strategy == 'Максимум':
-                    percentage_col = pct.iloc[i].idxmax()
+        min_percentage_col = pct.iloc[i].idxmin()
 
-                if cur == percentage_col:
-                    df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {cur}'].iloc[i] * (1 + pct[percentage_col].iloc[i])
-                else:
-                    exchange_rate = globals()[f'data_{percentage_col}_{cur}'].iloc[0]
-                    df[f'Капитал {cur}'].iloc[i + 1] = df[f'Капитал {percentage_col}'].iloc[i] * exchange_rate
+        minx[f'Капитал {min_percentage_col}'].iloc[i + 1] = minx[f'Капитал {min_percentage_col}'].iloc[i] * (
+                    1 + pct[min_percentage_col].iloc[i])
 
-    fig.add_scatter(x=data_BTC_USD.index, y=df[f'Капитал {currx}'] / df[f'Капитал {currx}'].iloc[0],
-                    mode='lines', name=strategy, line=dict(color='red' if strategy == 'Максимум' else 'blue'))
+        for cur in currencies:
+            if cur != min_percentage_col:
+                exchange_rate = globals()[f'data_{min_percentage_col}_{cur}'].iloc[i + 1]
+                minx[f'Капитал {cur}'].iloc[i + 1] = minx[f'Капитал {min_percentage_col}'].iloc[i + 1] * exchange_rate
+
+                if minx[f'Капитал {cur}'].iloc[i + 1] > minx[f'Капитал {cur}'].iloc[i]:
+                    minx[f'Капитал {cur}'].iloc[i + 1] = minx[f'Капитал {cur}'].iloc[i]
+
+    return minx
+
+
+def maximum(money, currencies, c):
+
+    maxx.iloc[0] = money.iloc[0][-4:]
+
+    pct = pd.DataFrame(index=data_BTC_USD.index, columns=currencies, data={'RUB': 0, 'USD': 0, 'BTC': 0, 'GOLD': 0})
+
+    for i in range(0, len(data_BTC_USD.index) - 1):
+        for cur in currencies:
+            if cur != c:
+                pct[cur].iloc[i] = ((globals()[f'data_{cur}_{c}'].iloc[i + 1] -
+                                    globals()[f'data_{cur}_{c}'].iloc[i]) /
+                globals()[f'data_{cur}_{c}'].iloc[i]) / 100
+
+        max_percentage_col = pct.iloc[i].idxmax()
+
+        maxx[f'Капитал {max_percentage_col}'].iloc[i + 1] = maxx[f'Капитал {max_percentage_col}'].iloc[i] * (
+                1 + pct[max_percentage_col].iloc[i])
+
+        for cur in currencies:
+            if cur != max_percentage_col:
+                exchange_rate = globals()[f'data_{max_percentage_col}_{cur}'].iloc[i]
+                maxx[f'Капитал {cur}'].iloc[i + 1] = maxx[f'Капитал {max_percentage_col}'].iloc[i + 1] * exchange_rate
+
+            if maxx[f'Капитал {cur}'].iloc[i + 1] < maxx[f'Капитал {cur}'].iloc[i]:
+                maxx[f'Капитал {cur}'].iloc[i + 1] = maxx[f'Капитал {cur}'].iloc[i]
+
+    return maxx
+
+
+minimum(result, currencies, c)
+maximum(result, currencies, c)
+
+
+def maxmin_in_out(money, tr_date: str, currx, tr_type, cash_amount):
+
+    if tr_type == 'Снятие':
+        money.loc[tr_date:, f'Капитал {currx}'] -= cash_amount
+
+    if tr_type == 'Пополнение':
+        money.loc[tr_date:, f'Капитал {currx}'] += cash_amount
+
+    for cur in currencies:
+        if cur != currx:
+
+            exchange_rate = globals()[f'data_{currx}_{cur}'].loc[tr_date]
+            converted_amount = cash_amount * exchange_rate
+            if tr_type == 'Снятие':
+                money.loc[tr_date:, f'Капитал {cur}'] -= converted_amount
+            if tr_type == 'Пополнение':
+                money.loc[tr_date:, f'Капитал {cur}'] += converted_amount
+
+    date = datetime.strptime(tr_date, "%Y-%m-%d")
+
+    mean = money[f'Капитал {c}'].loc[(date - timedelta(days=1)).strftime("%Y-%m-%d")]
+    ch = money[f'Капитал {c}'].loc[(date + timedelta(days=1)).strftime("%Y-%m-%d")]
+
+    color = 'red' if money.equals(maxx) else 'blue'
+
+    fig.add_trace(go.Scatter(
+        x=[date, date],
+        y=[mean, ch],
+        mode='lines',
+        line=dict(color=color, dash='dot'),
+        showlegend=False,
+        hoverinfo='text',
+        text=f'{tr_type, cash_amount, currx, tr_date}'
+        )
+    )
+
+    if (minx < 0).any(axis=1).any():
+        minx[minx < 0] = 0
 
     return fig
 
 
-def inaction(money, currx):
-
-    fig.add_trace(go.Scatter(x=data_BTC_USD.index, y=money[f'Капитал {currx}'] /
-                            money[f'Капитал {currx}'].iloc[0], mode='lines', name='Бездействие',
-                             line=dict(color='grey')))
-
-    return fig
-
-
-def user_in_out(money, tr_date: str, currx, tr_type, cash_amount):
+def user_in_out(money, tr_date: str, tr_type, cash_amount, currx, currj):
 
     cap = {currency: 0 for currency in currencies}
 
-    if tr_type in ['Снять', 'Пополнить']:
+    if tr_type == 'Снятие':
+        money.loc[tr_date:, currx] -= cash_amount
 
-        money.loc[tr_date:, currx] += (-1) ** (tr_type == 'Снять') * cash_amount
-        cash_in_here = dict(money.loc[tr_date, money.columns[:3]])
+    if tr_type == 'Пополнение':
+        money.loc[tr_date:, currx] += cash_amount
 
-        for cur_out in currencies:
-            for cur_in in currencies:
-                if cur_out == cur_in:
-                    cap[cur_in] += cash_in_here[cur_out]
-                else:
-                    exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
-                    cap[cur_in] += cash_in_here[cur_out] * exchange_rate
+    cash_in_here = dict(money.loc[tr_date, money.columns[:4]])
 
-        for currency in currencies:
-            money.loc[tr_date:, f'Капитал {currency}'] = cap[currency]
+    for cur_out in currencies:
+        for cur_in in currencies:
+            if cur_out == cur_in:
+                cap[cur_in] += cash_in_here[cur_out]
+            else:
+                exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
+                cap[cur_in] += cash_in_here[cur_out] * exchange_rate
+
+    for currency in currencies:
+        money.loc[tr_date:, f'Капитал {currency}'] = cap[currency]
 
     money = money.bfill()
 
-    operations = [date(2023, 3, 12), date(2023, 3, 18), date(2023, 4, 19),
-                  date(2023, 5, 8), date(2023, 7, 1), date(2024, 1, 1)]
+    date = datetime.strptime(tr_date, "%Y-%m-%d")
 
-    for i in range(len(operations) - 1):
+    mean = money[f'Капитал {c}'].loc[(date - timedelta(days=1)).strftime("%Y-%m-%d")]
+    ch = money[f'Капитал {c}'].loc[(date + timedelta(days=1)).strftime("%Y-%m-%d")]
 
-        mean = money[f'Капитал {c}'].loc[str(operations[i] - timedelta(days=1))] / money[f'Капитал {c}'].iloc[0]
-        ch = money[f'Капитал {c}'].loc[str(operations[i])] / money[f'Капитал {c}'].iloc[0]
+    color = 'grey' if money.equals(result) else 'white'
 
-        fig.add_shape(
-            dict(
-                type='line',
-                x0=str(operations[i]),
-                x1=str(operations[i]),
-                y0=mean,
-                y1=ch,
-                yref='y',
-                line=dict(color='white', dash='dash')
+    fig.add_trace(go.Scatter(
+        x=[date, date],
+        y=[mean, ch],
+        mode='lines',
+        line=dict(color=color, dash='dot'),
+        showlegend=False,
+        hoverinfo='text',
+        text=f'{tr_type, cash_amount, currx, tr_date}'
+        )
+    )
+
+    for j in range(len(data_BTC_USD.index)):
+        for cur in currencies:
+            if cur != c:
+                exchange_rate = globals()[f'data_{cur}_{c}'].iloc[j]
+                converted_amount = user_cur_graphs[cur].iloc[j] * exchange_rate
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = converted_amount
+            else:
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = user_cur_graphs[cur].iloc[j]
+            if user_cur_graphs[f'{cur}/{c}'].iloc[j] == 0:
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = None
+
+    for cur in currencies:
+        meanx = user_cur_graphs[f'{cur}/{c}'].loc[(date - timedelta(days=1)).strftime("%Y-%m-%d")]
+        chx = user_cur_graphs[f'{cur}/{c}'].loc[date.strftime("%Y-%m-%d")]
+
+        figg.add_trace(go.Scatter(
+            x=[date, date],
+            y=[meanx, chx],
+            mode='lines',
+            line=dict(color=colors.get(cur), dash='dot'),
+            showlegend=False,
+            hoverinfo='text',
+            text=f'{tr_type, cash_amount, cur, tr_date}'
             )
         )
 
-    return money
+    if money.equals(user_story):
+        actions.append(date.date())
+        actions_assets.append(date.date())
+
+    return fig, money, figg
 
 
 def user_convert(money, tr_date: str, tr_type, cash_amount, cur_out, cur_in):
 
     cap = {currency: 0 for currency in currencies}
 
-    if tr_type == 'Конвертировать':
+    if tr_type == 'Конвертация':
 
-        exchange_rate = globals()[f'data_{cur_out}_{cur_in}']
+        exchange_rate = globals()[f'data_{cur_out}_{cur_in}'].loc[tr_date]
         money.loc[tr_date:, cur_out] -= cash_amount
-        money.loc[tr_date:, cur_in] = money.loc[tr_date, cur_in] + cash_amount * exchange_rate
+        money.loc[tr_date:, cur_in] += cash_amount * exchange_rate
 
-    cash_in_here = dict(money.loc[tr_date, money.columns[:3]])
+    cash_in_here = dict(money.loc[tr_date, money.columns[:4]])
 
     for cur_out in currencies:
         for cur_in in currencies:
@@ -169,57 +328,344 @@ def user_convert(money, tr_date: str, tr_type, cash_amount, cur_out, cur_in):
     money = money.bfill()
     money = money.ffill()
 
-    return money
+    date = datetime.strptime(tr_date, "%Y-%m-%d")
+
+    for j in range(len(data_BTC_USD.index)):
+        for cur in currencies:
+            if cur != c:
+                exchange_rate = globals()[f'data_{cur}_{c}'].iloc[j]
+                converted_amount = user_cur_graphs[cur].iloc[j] * exchange_rate
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = converted_amount
+            else:
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = user_cur_graphs[cur].iloc[j]
+            if user_cur_graphs[f'{cur}/{c}'].iloc[j] == 0:
+                user_cur_graphs[f'{cur}/{c}'].iloc[j] = None
+
+    for cur in currencies:
+
+        meanx = user_cur_graphs[f'{cur}/{c}'].loc[(date - timedelta(days=1)).strftime("%Y-%m-%d")]
+        chx = user_cur_graphs[f'{cur}/{c}'].loc[date.strftime("%Y-%m-%d")]
+
+        figg.add_trace(go.Scatter(
+            x=[date.strftime("%Y-%m-%d"), date.strftime("%Y-%m-%d")],
+            y=[meanx, chx],
+            mode='lines',
+            line=dict(color=colors.get(cur), dash='dot'),
+            showlegend=False
+            )
+        )
+
+    if money.equals(user_story):
+        actions_assets.append(date.date())
+
+    return fig, figg
 
 
-def user_story_graph(money, currx):
+def min_story_graph(money, currx):
 
-    user_in_out(user_story, '2023-03-12', 'BTC', 'Снять', 0.8)
-    # user_in_out(, '2023-03-12', 'BTC', 'Снять', 0.8)
-    # user_in_out(, '2023-03-12', 'BTC', 'Снять', 0.8)
+    maxmin_in_out(minx, '2023-05-31', 'USD', 'Снятие', 25000)
 
-    user_in_out(user_story, '2023-03-18', 'RUB', 'Снять', 40000)
-    # user_in_out(user_story, '2023-03-18', 'RUB', 'Снять', 40000)
-    # user_in_out(maximum, '2023-03-18', 'RUB', 'Снять', 40000)
+    maxmin_in_out(minx, '2023-05-31', 'BTC', 'Снятие', 1)
 
-    user_in_out(user_story, '2023-04-19', 'USD', 'Пополнить', 35000)
-    # user_in_out(minimum, '2023-04-19', 'USD', 'Пополнить', 35000)
-    # user_in_out(maximum, '2023-04-19', 'USD', 'Пополнить', 35000)
+    maxmin_in_out(minx, '2023-09-01', 'RUB', 'Снятие', 3000000)
 
-    user_in_out(user_story, '2023-05-08', 'BTC', 'Пополнить', 0.96)
-    # user_in_out(minimum, '2023-05-08', 'BTC', 'Пополнить', 0.96)
-    # user_in_out(maximum, '2023-05-08', 'BTC', 'Пополнить', 0.96)
+    for i in range(len(actions) - 1):
 
-    user_convert(user_story, '2023-06-01', 'Конвертировать', 0.27, 'BTC', 'USD')
-
-    user_in_out(user_story, '2023-07-01', 'BTC', 'Пополнить', 0.12)
-    # user_in_out(minimum, '2023-07-01', 'BTC', 'Пополнить', 0.12)
-    # user_in_out(maximum, '2023-07-01', 'BTC', 'Пополнить', 0.12)
-
-    user_convert(user_story, '2023-10-01', 'Конвертировать', 20000, 'RUB', 'USD')
-
-    operations = [date(2023, 1, 1), date(2023, 3, 12), date(2023, 3, 18), date(2023, 4, 19),
-                  date(2023, 5, 8), date(2023, 7, 1), date(2024, 1, 1)]
-
-    for i in range(len(operations) - 1):
-
-        fig.add_trace(go.Scatter(x=money.loc[str(operations[i]): str(operations[i + 1] - timedelta(days=1))].index,
-                                 y=money.loc[str(operations[i]): str(operations[i + 1] - timedelta(days=1)), f'Капитал {currx}']
-                                / money[f'Капитал {currx}'].iloc[0], showlegend=False, line=dict(color='white'), mode='lines'))
-    fig.add_trace(go.Scatter(name='Пользователь'))
+        fig.add_trace(go.Scatter(x=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1)),
+                                   f'Капитал {currx}'], showlegend=False, line=dict(color='blue'),
+                                 mode='lines'))
 
     return fig
 
 
-if c in currencies:
-    if 'Минимум' in strategy:
-        max_min(result, currencies, c, 'Минимум')
-    if 'Максимум' in strategy:
-        max_min(result, currencies, c, 'Максимум')
-    if 'Бездействие' in strategy:
-        inaction(result, c)
-    if 'Пользователь' in strategy:
-        user_story_graph(user_story, c)
+def max_story_graph(money, currx):
 
-st.plotly_chart(fig)
+    maxmin_in_out(maxx, '2023-05-31', 'USD', 'Снятие', 25000)
 
+    maxmin_in_out(maxx, '2023-05-31', 'BTC', 'Снятие', 1)
+
+    maxmin_in_out(maxx, '2023-09-01', 'RUB', 'Снятие', 3000000)
+
+    for i in range(len(actions) - 1):
+
+        fig.add_trace(go.Scatter(x=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1)),
+                                   f'Капитал {currx}'], showlegend=False, line=dict(color='red'),
+                                 mode='lines'))
+
+    return fig
+
+
+def inaction_story_graph(money, currx):
+
+    user_in_out(result, '2023-05-31', 'RUB', 'Снятие', 25000 * data_USD_RUB.loc['2023-05-01'], '-')
+
+    user_in_out(result, '2023-05-31', 'RUB', 'Снятие', 1 * data_BTC_RUB.loc['2023-05-01'], '-')
+
+    user_in_out(result, '2023-09-01', 'RUB', 'Снятие', 3000000, '-')
+
+    for i in range(len(actions) - 1):
+
+        fig.add_trace(go.Scatter(x=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1)),
+                                   f'Капитал {currx}'], showlegend=False, line=dict(color='grey'),
+                                 mode='lines'))
+
+    return fig
+
+
+def single_user_graph(money, currx):
+
+    # cur = conn.cursor()
+    #
+    # cur.execute("SELECT * FROM history")
+    # rows = cur.fetchall()
+    #
+    # for row in rows:
+    #     datesop, operation, amount, currency_in, currency_out = row
+    #     if operation == 'Конвертация':
+    #         user_convert(user_cur_graphs, datesop, operation, amount, currency_in, currency_out)
+    #     if operation == 'Снятие':
+    #         user_in_out(user_cur_graphs, datesop, operation, amount, currency_in, currency_out)
+
+    user_convert(user_cur_graphs, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'USD')
+    user_convert(user_cur_graphs, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'BTC')
+    user_convert(user_cur_graphs, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'GOLD')
+    user_convert(user_cur_graphs, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'USD')
+    user_convert(user_cur_graphs, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'BTC')
+    user_convert(user_cur_graphs, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'GOLD')
+    user_in_out(user_cur_graphs, '2023-05-31',  'Снятие', 25000, 'USD')
+    user_in_out(user_cur_graphs, '2023-05-31',  'Снятие', 1,  'BTC')
+    user_in_out(user_cur_graphs, '2023-09-01',  'Снятие', 3000000,'RUB')
+    user_convert(user_cur_graphs, '2023-09-01', 'Конвертация', 20000, 'USD', 'BTC')
+    user_convert(user_cur_graphs, '2023-09-01', 'Конвертация', 20000, 'USD', 'GOLD')
+    user_convert(user_cur_graphs, '2023-12-31', 'Конвертация', 7000001, 'RUB', 'USD')
+    user_convert(user_cur_graphs, '2023-12-31', 'Конвертация', 6.9436, 'BTC', 'USD')
+    user_convert(user_cur_graphs, '2023-12-31', 'Конвертация', 2952.6378, 'GOLD', 'USD')
+
+    for i in range(len(actions_assets) - 1):
+        for cur in currencies:
+            data = money.loc[str(actions_assets[i]): str(actions_assets[i + 1] - timedelta(days=1)), f'{cur}/{c}']
+            if cur == currx:
+                if (data == 0).any():
+                    continue
+                else:
+                    figg.add_trace(go.Scatter(
+                        x=money.loc[str(actions_assets[i]): str(actions_assets[i + 1] - timedelta(days=1))].index,
+                        y=money.loc[str(actions_assets[i]): str(actions_assets[i + 1] - timedelta(days=1)), f'{c}/{c}'],
+                        showlegend=False, line=dict(color=colors.get(cur)), mode='lines'
+                    ))
+            else:
+                figg.add_trace(go.Scatter(x=money.loc[str(actions_assets[i]): str(actions_assets[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(actions_assets[i]): str(actions_assets[i + 1] - timedelta(days=1)),
+                                   f'{cur}/{c}'], showlegend=False, line=dict(color=colors.get(cur)), mode='lines'))
+
+    return figg, money
+
+
+def user_story_graph(money, currx):
+
+    user_convert(user_story, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'USD')
+    user_convert(user_story, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'BTC')
+    user_convert(user_story, '2023-03-01', 'Конвертация', 10000000, 'RUB', 'GOLD')
+    user_convert(user_story, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'USD')
+    user_convert(user_story, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'BTC')
+    user_convert(user_story, '2023-05-01', 'Конвертация', 3333333, 'RUB', 'GOLD')
+    user_in_out(user_cur_graphs, '2023-05-31',  'Снятие', 25000, 'USD', '-')
+    user_in_out(user_cur_graphs, '2023-05-31',  'Снятие', 1,  'BTC', '-')
+    user_in_out(user_cur_graphs, '2023-09-01',  'Снятие', 3000000,'RUB', '-')
+    user_convert(user_story, '2023-09-01', 'Конвертация', 20000, 'USD', 'BTC')
+    user_convert(user_story, '2023-09-01', 'Конвертация', 20000, 'USD', 'GOLD')
+    user_convert(user_story, '2023-12-31', 'Конвертация', 7000001, 'RUB', 'USD')
+    user_convert(user_story, '2023-12-31', 'Конвертация', 6.9436365414256285, 'BTC', 'USD')
+    user_convert(user_story, '2023-12-31', 'Конвертация', 2952.6378 + 286.989, 'GOLD', 'USD')
+
+    actions.append(date(2024, 1, 1))
+    actions_assets.append(date(2024, 1, 1))
+
+    for i in range(len(actions) - 1):
+
+        fig.add_trace(go.Scatter(x=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1))].index,
+                                 y=money.loc[str(actions[i]): str(actions[i + 1] - timedelta(days=1)), f'Капитал {currx}']
+                                , showlegend=False, line=dict(color='white'), mode='lines'))
+
+    return fig
+
+
+def volatilityitog(v, end):
+
+    ind = '{} : {}'.format('2023-01-06', end)
+
+    s = datetime.strptime('2023-01-06', '%Y-%m-%d').date()
+    e = datetime.strptime(end, '%Y-%m-%d').date()
+
+    r = [s + timedelta(days=x) for x in range((e - s).days + 1)]
+
+    v.loc[ind, 'RUB (отн USD)'] = np.std(pct_RUB_USD.loc['2023-01-06':end]) * pow(len(r), 0.5)
+    v.loc[ind, 'BTC (отн USD)'] = np.std(pct_BTC_USD.loc['2023-01-06':end]) * pow(len(r), 0.5)
+    v.loc[ind, 'GOLD (отн USD)'] = np.std(pct_GOLD_USD.loc['2023-01-06':end]) * pow(len(r), 0.5)
+    v.loc[ind, 'USD (отн RUB)'] = np.std(pct_USD_RUB.loc['2023-01-06':end]) * pow(len(r), 0.5)
+    v.loc[ind, 'Портфель'] = pow((((v.loc[ind, 'USD (отн RUB)'])**2 * (user_story['USD'].loc[end] /
+                              user_story[f'Капитал USD'].loc[end])**2 + (v.loc[ind, 'GOLD (отн USD)'] / pow(len(r), 0.5))**2 * (user_story['GOLD'].loc[end] /
+                              user_story[f'Капитал GOLD'].loc[end])**2 + (v.loc[ind, 'BTC (отн USD)'] / pow(len(r), 0.5))**2 * (user_story['BTC'].loc[end] /
+                              user_story[f'Капитал BTC'].loc[end])**2 + (v.loc[ind, 'RUB (отн USD)'] / pow(len(r), 0.5))**2 * (user_story['RUB'].loc[end] /
+                              user_story[f'Капитал RUB'].loc[end])**2) * (2 * v.loc[ind, 'USD (отн RUB)'] / pow(len(r), 0.5) * user_story['USD'].loc[end] /
+                              user_story[f'Капитал USD'].loc[end] * v.loc[ind, 'GOLD (отн USD)'] / pow(len(r), 0.5) * user_story['GOLD'].loc[end] /
+                              user_story[f'Капитал GOLD'].loc[end] * v.loc[ind, 'BTC (отн USD)'] / pow(len(r), 0.5) * user_story['BTC'].loc[end] /
+                              user_story[f'Капитал BTC'].loc[end] * v.loc[ind, 'RUB (отн USD)'] / pow(len(r), 0.5) * user_story['RUB'].loc[end] /
+                              user_story[f'Капитал RUB'].loc[end])), 0.5) * 100
+
+    return v
+
+
+def volatilitypart(v, start, end):
+
+    ind = '{} : {}'.format(start, end)
+
+    s = datetime.strptime(start, '%Y-%m-%d').date()
+    e = datetime.strptime(end, '%Y-%m-%d').date()
+
+    r = [s + timedelta(days=x) for x in range((e - s).days + 1)]
+
+    z.loc[ind, 'RUB (отн USD)'] = np.std(pct_RUB_USD.loc[start:end]) * pow(len(r), 0.5)
+    z.loc[ind, 'BTC (отн USD)'] = np.std(pct_BTC_USD.loc[start:end]) * pow(len(r), 0.5)
+    z.loc[ind, 'GOLD (отн USD)'] = np.std(pct_GOLD_USD.loc[start:end]) * pow(len(r), 0.5)
+    z.loc[ind, 'USD (отн RUB)'] = np.std(pct_USD_RUB[start:end]) * pow(len(r), 0.5)
+    z.loc[ind, 'Портфель'] = pow((((z.loc[ind, 'USD (отн RUB)'] / pow(len(r), 0.5)) ** 2 * (user_story['USD'].loc[end] /
+                                                                         user_story[f'Капитал USD'].loc[end]) ** 2 + (
+                                   z.loc[ind, 'GOLD (отн USD)'] / pow(len(r), 0.5)) ** 2 * (user_story['GOLD'].loc[end] /
+                                                                         user_story[f'Капитал GOLD'].loc[end]) ** 2 + (
+                                   z.loc[ind, 'BTC (отн USD)'] / pow(len(r), 0.5)) ** 2 * (user_story['BTC'].loc[end] /
+                                                                        user_story[f'Капитал BTC'].loc[end]) ** 2 + (
+                                   z.loc[ind, 'RUB (отн USD)'] / pow(len(r), 0.5)) ** 2 * (user_story['RUB'].loc[end] /
+                                                                        user_story[f'Капитал RUB'].loc[end]) ** 2) * (
+                                              2 * z.loc[ind, 'USD (отн RUB)'] / pow(len(r), 0.5) * user_story['USD'].loc[end] /
+                                              user_story[f'Капитал USD'].loc[end] * z.loc[ind, 'GOLD (отн USD)'] / pow(len(r), 0.5) *
+                                              user_story['GOLD'].loc[end] /
+                                              user_story[f'Капитал GOLD'].loc[end] * z.loc[ind, 'BTC (отн USD)'] / pow(len(r), 0.5) *
+                                              user_story['BTC'].loc[end] /
+                                              user_story[f'Капитал BTC'].loc[end] * z.loc[ind, 'RUB (отн USD)'] / pow(len(r), 0.5) *
+                                              user_story['RUB'].loc[end] /
+                                              user_story[f'Капитал RUB'].loc[end])), 0.5)
+
+    return z
+
+
+def incomepart(u, start, end):
+
+    ind = '{} : {}'.format(start, end)
+
+    for cur in currencies:
+        i_x.loc[ind, cur] = round(((u[f'Капитал {cur}'].loc[end] / u[f'Капитал {cur}'].loc[start]) - 1) * 100, 2)
+
+    return i_x
+
+
+def incomeitog(u, end):
+
+    ind = '{} : {}'.format('2023-01-06', end)
+
+    for cur in currencies:
+        i_1.loc[ind, cur] = round(((u[f'Капитал {cur}'].loc[end] / u[f'Капитал {cur}'].loc['2023-01-06']) - 1) * 100, 2)
+
+    return i_1
+
+
+def waitedincomeitog(u, end):
+
+    ind = '{} : {}'.format('2023-01-06', end)
+
+    s = datetime.strptime('2023-01-06', '%Y-%m-%d').date()
+    e = datetime.strptime(end, '%Y-%m-%d').date()
+
+    r = [s + timedelta(days=x) for x in range((e - s).days + 1)]
+
+    w_x.loc[ind, 'RUB'] = np.mean(pct_RUB_USD.loc['2023-01-06': end]) * len(r) * u['RUB'].loc[end] / u[f'Капитал RUB'].loc[end]
+    w_x.loc[ind, 'BTC'] = np.mean(pct_BTC_USD.loc['2023-01-06': end]) * len(r) * u['BTC'].loc[end] / u[f'Капитал BTC'].loc[end]
+    w_x.loc[ind, 'GOLD'] = np.mean(pct_GOLD_USD.loc['2023-01-06': end]) * len(r) * u['GOLD'].loc[end] / u[f'Капитал GOLD'].loc[end]
+    w_x.loc[ind, 'USD'] = np.mean(pct_USD_RUB.loc['2023-01-06': end]) * len(r) * u['USD'].loc[end] / u[f'Капитал USD'].loc[end]
+    w_x.loc[ind, 'Капитал'] = w_x.loc[ind, 'RUB'] + w_x.loc[ind, 'BTC'] + w_x.loc[ind, 'GOLD'] + w_x.loc[ind, 'USD']
+
+    return w_x
+
+
+def waitedincomepart(u, start, end):
+
+    ind = '{} : {}'.format(start, end)
+
+    s = datetime.strptime(start, '%Y-%m-%d').date()
+    e = datetime.strptime(end, '%Y-%m-%d').date()
+
+    r = [s + timedelta(days=x) for x in range((e - s).days + 1)]
+
+    w_1.loc[ind, 'RUB'] = np.mean(pct_RUB_USD.loc[start: end]) * len(r) * u['RUB'].loc[end] / u[f'Капитал RUB'].loc[end]
+    w_1.loc[ind, 'BTC'] = np.mean(pct_BTC_USD.loc[start: end]) * len(r) * u['BTC'].loc[end] / u[f'Капитал BTC'].loc[end]
+    w_1.loc[ind, 'GOLD'] = np.mean(pct_GOLD_USD.loc[start: end]) * len(r) * u['GOLD'].loc[end] / u[f'Капитал GOLD'].loc[end]
+    w_1.loc[ind, 'USD'] = np.mean(pct_USD_RUB.loc[start: end]) * len(r) * u['USD'].loc[end] / u[f'Капитал USD'].loc[end]
+    w_1.loc[ind, 'Капитал'] = w_1.loc[ind, 'RUB'] + w_1.loc[ind, 'BTC'] + w_1.loc[ind, 'GOLD'] + w_1.loc[ind, 'USD']
+
+    return w_1
+
+
+if 'Пользователь' in strategy:
+    user_story_graph(user_story, c)
+    single_user_graph(user_cur_graphs, c)
+if 'Минимум' in strategy:
+    min_story_graph(minx, c)
+if 'Максимум' in strategy:
+    max_story_graph(maxx, c)
+if 'Бездействие' in strategy:
+    inaction_story_graph(result, c)
+
+
+col1, col2 = st.columns(2)
+with col1:
+    st.plotly_chart(fig, use_container_width=True)
+with col2:
+    st.plotly_chart(figg, use_container_width=True)
+
+
+volatilitypart(v, '2023-01-06', '2023-02-28')
+volatilitypart(v, '2023-03-01', '2023-04-30')
+volatilitypart(v, '2023-05-01', '2023-05-30')
+volatilitypart(v, '2023-05-31', '2023-08-31')
+st.write('Волатильность за каждый промежуток %:')
+st.write(volatilitypart(v, '2023-09-01', '2023-12-30'))
+
+volatilityitog(v, '2023-02-28')
+volatilityitog(v, '2023-04-30')
+volatilityitog(v, '2023-05-30')
+volatilityitog(v, '2023-08-31')
+st.write('Волатильность нарастающим итогом %:')
+st.write(volatilityitog(v, '2023-12-30'))
+
+incomepart(user_story, '2023-01-06', '2023-02-28')
+incomepart(user_story, '2023-03-01', '2023-04-30')
+incomepart(user_story, '2023-05-01', '2023-05-30')
+incomepart(user_story, '2023-05-31', '2023-08-31')
+st.write('Доходность за каждый промежуток %:')
+st.write(incomepart(user_story, '2023-09-01', '2023-12-30'))
+
+incomeitog(user_story, '2023-02-28')
+incomeitog(user_story, '2023-04-30')
+incomeitog(user_story, '2023-05-30')
+incomeitog(user_story, '2023-08-31')
+st.write('Доходность нарастающим итогом %:')
+st.write(incomeitog(user_story, '2023-12-30'))
+
+waitedincomeitog(user_story, '2023-02-28')
+waitedincomeitog(user_story, '2023-04-30')
+waitedincomeitog(user_story, '2023-05-30')
+waitedincomeitog(user_story, '2023-08-31')
+st.write('Ожидаемая доходность нарастающим итогом %:')
+st.write(waitedincomeitog(user_story, '2023-12-30'))
+
+waitedincomepart(user_story, '2023-01-06', '2023-02-28')
+waitedincomepart(user_story, '2023-03-01', '2023-04-30')
+waitedincomepart(user_story, '2023-05-01', '2023-05-30')
+waitedincomepart(user_story, '2023-05-31', '2023-08-31')
+st.write('Ожидаемая доходность за промежуток %:')
+st.write(waitedincomepart(user_story, '2023-09-01', '2023-12-30'))
+
+st.write(user_story)
